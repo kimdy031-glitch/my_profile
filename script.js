@@ -8,12 +8,21 @@
   const visible = records => records.filter(item => item.visibility !== 'hidden').slice().sort((a,b) => a.order-b.order);
   const sectionNames = ['배경','담당 범위','전략','결과','배운 점'];
   function isSafeExternal(value) { try { const u=new URL(value); return ['https:','http:'].includes(u.protocol) && !u.username && !u.password; } catch { return false; } }
-  // 사진 폴더의 상대 경로만 사용하므로 파일을 바로 열어도 이미지를 불러옵니다.
+  // GitHub에는 로고/·스킬/·학습기록/·각 프로젝트 폴더가 index.html 옆에 있습니다.
+  // localURL/data-local-src는 기존 사진/ 폴더를 사용하는 로컬 실행용 경로입니다.
   function safeAssetURL(value) {
-    if (typeof value !== 'string' || value.includes('\\')) return false;
-    let decoded; try { decoded = decodeURIComponent(value); } catch { return false; }
-    return decoded.startsWith('사진/') && !decoded.includes('\\') &&
-      !/[\u0000-\u001f]/.test(decoded) && !decoded.split('/').includes('..');
+    if(typeof value!=='string'||!value)return false;
+    let decoded;try {decoded=decodeURIComponent(value).replace(/^\.\//,'');}catch{return false;}
+    // 상대 파일 경로만 허용합니다. 외부 주소·상위 폴더 이동·제어 문자는 차단합니다.
+    if(/[\\\u0000-\u001f:#?]/.test(decoded))return false;
+    const parts=decoded.split('/');
+    return !parts.some(part=>!part||part==='.'||part==='..')&&/\.(png|jpe?g|gif|webp|avif|svg|mp4|webm)$/i.test(decoded);
+  }
+  function resolveAssetURL(url,localURL) {
+    const path=location.protocol==='file:'&&safeAssetURL(localURL)?localURL:url;
+    if(!safeAssetURL(path))return '';
+    // 경로의 각 이름을 인코딩해 한글·공백을 처리하고 /my_profile/ 하위 경로를 유지합니다.
+    return decodeURIComponent(path).replace(/^\.\//,'').split('/').map(encodeURIComponent).join('/');
   }
   // RENDER: 안전한 제한 Markdown(문단·목록·강조 제목)을 HTML로 바꿉니다. 원문 HTML을 실행하지 않습니다.
   function markdown(text, emphasisPhrases=[], accentPhrases=[]) {
@@ -49,7 +58,7 @@
   }
   function media(data,id,{label='사진 준비 중',className='',fallback='',eager=false,fit}={}) {
     const asset=data.assets.find(item=>item.id===id);
-    const url=asset?.url&&safeAssetURL(asset.url)?asset.url:'';
+    const url=resolveAssetURL(asset?.url,asset?.localURL);
     let content='';
     if(url&&asset.kind==='video') {
       // 지정된 영상은 모바일에서도 음소거 상태로 자동 반복 재생합니다.
@@ -76,18 +85,27 @@
   // ASSET: 일반 사진과 휴대폰 화면의 로딩·오류를 감지합니다.
   // 휴대폰 사진이 없으면 프레임 크기를 유지하며 중립적인 자리표시를 보여줍니다.
   function prepareImages(scope=document) {
-    scope.querySelectorAll('.media img,.phone-screen img').forEach(img=>{
-      const box=img.closest('.media,.phone-screen');
-      const mark=()=>box.classList.add(img.naturalWidth?'loaded':'failed');
-      img.addEventListener('load',mark,{once:true});
-      img.addEventListener('error',()=>box.classList.add('failed'),{once:true});
-      if(img.complete)mark();
-    });
-    scope.querySelectorAll('.media video').forEach(video=>{
-      const box=video.closest('.media');
-      video.addEventListener('loadedmetadata',()=>box.classList.add('loaded'),{once:true});
-      video.addEventListener('error',()=>box.classList.add('failed'),{once:true});
-      if(video.readyState>=1)box.classList.add('loaded');
+    scope.querySelectorAll('.media img,.phone-screen img,.media video').forEach(element=>{
+      const box=element.closest('.media,.phone-screen');
+      if(!box)return;
+      const isImage=element.tagName==='IMG';
+      const markLoaded=()=>{box.classList.remove('failed');box.classList.add('loaded');};
+      const markFailed=()=>{box.classList.remove('loaded');box.classList.add('failed');};
+      // 한 요소에 중복 이벤트를 등록하지 않으며, 성공 시 이전 실패 상태도 해제합니다.
+      if(!element.dataset.assetPrepared) {
+        element.dataset.assetPrepared='true';
+        element.addEventListener(isImage?'load':'loadedmetadata',markLoaded);
+        element.addEventListener('error',markFailed);
+      }
+      const url=resolveAssetURL(element.getAttribute('src'),element.dataset.localSrc);
+      if(!url) {markFailed();return;}
+      if(element.getAttribute('src')!==url) {
+        box.classList.remove('loaded','failed');
+        element.setAttribute('src',url);
+        if(!isImage)element.load();
+      }
+      if(isImage&&element.complete) {element.naturalWidth?markLoaded():markFailed();}
+      else if(!isImage&&element.readyState>=1)markLoaded();
     });
   }
   // REVEAL: 화면에 들어올 때 떠오르고, 완전히 벗어나면 초기화해 재진입 시 반복합니다.
