@@ -80,7 +80,11 @@
   const $=selector=>document.querySelector(selector), $$=selector=>[...document.querySelectorAll(selector)];
   const data=JSON.parse($('#public-data').textContent), selected={project:'all',skill:'all'};
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-  let observer,dialogOpener,lockedY=0,menuOpen=false;
+  const touchViewport=matchMedia('(hover: none) and (pointer: coarse)');
+  let observer,dialogOpener,lockedX=0,lockedY=0,menuOpen=false;
+  let scrollLocked=false,scrollRestoring=false,scrollRestoreFrame=0,lockBodyStyles=null,lockedAnchor=null;
+  // 모바일 주소창의 높이 변화는 페이지의 고정 구간 길이를 바꾸지 않습니다.
+  let layoutWidth=innerWidth,layoutHeight=innerHeight,layoutRefreshPending=false;
   const dialog=$('#detail-dialog'),publicSite=$('#public-site');
   // ASSET: 일반 사진과 휴대폰 화면의 로딩·오류를 감지합니다.
   // 휴대폰 사진이 없으면 프레임 크기를 유지하며 중립적인 자리표시를 보여줍니다.
@@ -152,14 +156,14 @@
     if(!pin||!competencyCards.length)return;
     const animate=!reduced.matches&&'IntersectionObserver' in window;
     const navHeight=$('.site-header').getBoundingClientRect().height;
-    const stageHeight=Math.max(260,innerHeight-navHeight-32);
+    const stageHeight=Math.max(260,layoutHeight-navHeight-32);
     competencyPinTop=navHeight+16;
     // 마지막 카드가 나타난 뒤에도 읽을 수 있는 여유 구간을 둡니다.
-    competencyDistance=Math.max(960,innerHeight*1.6);
+    competencyDistance=Math.max(960,layoutHeight*1.6);
     pin.style.setProperty('--competency-top',competencyPinTop+'px');
     pin.style.setProperty('--competency-height',stageHeight+'px');
     pin.style.setProperty('--competency-distance',competencyDistance+'px');
-    competencyPinned=animate&&innerHeight>=500;
+    competencyPinned=animate&&layoutHeight>=500;
     pin.classList.toggle('is-pinned',competencyPinned);
     // 매우 낮은 화면에서는 카드 전체를 읽을 수 있도록 일반 스크롤로 전환합니다.
     const inner=pin.querySelector('.competency-stage-inner');
@@ -244,14 +248,14 @@
     });
     const navHeight=$('.site-header').getBoundingClientRect().height;
     experiencePinTop=navHeight+12;
-    const stageHeight=innerHeight-navHeight-24;
+    const stageHeight=layoutHeight-navHeight-24;
     // 한 항목을 읽고 다음 항목으로 넘어가는 스크롤 길이는 여기서 조절합니다.
-    experienceStep=Math.max(360,innerHeight*.58);
+    experienceStep=Math.max(360,layoutHeight*.58);
     pin.style.setProperty('--experience-top',experiencePinTop+'px');
     pin.style.setProperty('--experience-stage-height',stageHeight+'px');
     pin.style.setProperty('--experience-distance',experienceCards.length*experienceStep+'px');
     pin.style.removeProperty('--experience-card-height');
-    experiencePinned=!reduced.matches&&experienceCards.length>=3&&innerHeight>=600;
+    experiencePinned=!reduced.matches&&experienceCards.length>=3&&layoutHeight>=600;
     pin.classList.toggle('is-pinned',experiencePinned);
     status.hidden=!experiencePinned;
     status.textContent='01 / '+String(experienceCards.length).padStart(2,'0');
@@ -359,8 +363,68 @@
     const section=$(group==='project'?'#project':'#skills');if(section.getBoundingClientRect().bottom<100)section.scrollIntoView({block:'start',behavior:'instant'});
   }
   // OVERLAY: 한 dialog만 사용합니다. 배경 inert·스크롤·열기 버튼 포커스를 공통으로 복원합니다.
-  function lockScroll(){lockedY=scrollY;document.body.style.position='fixed';document.body.style.top=`-${lockedY}px`;document.body.style.width='100%';}
-  function unlockScroll(){document.body.style.position='';document.body.style.top='';document.body.style.width='';window.scrollTo({top:lockedY,behavior:'instant'});}
+  // 위치 복원 중에는 부드러운 앵커 이동과 브라우저의 자동 스크롤 보정을 중단합니다.
+  function cancelPageScroll() {
+    scrollCancelled=true;cancelAnimationFrame(scrollFrame);
+  }
+  function captureScrollAnchor(preferred) {
+    if(preferred?.isConnected)return {element:preferred,top:preferred.getBoundingClientRect().top};
+    const markers=$$('[data-project],[data-certificate],#learning-gallery,#experience-pin,#competency-pin,#skills,#certification,#project,#education,#home,#footer');
+    let chosen=null,distance=Infinity;
+    for(const element of markers) {
+      if(!element.getClientRects().length)continue;
+      const rect=element.getBoundingClientRect();
+      if(rect.bottom<=0||rect.top>=innerHeight)continue;
+      const next=Math.abs(rect.top-100);
+      if(next<distance) {chosen={element,top:rect.top};distance=next;}
+    }
+    return chosen;
+  }
+  function anchorScrollY(anchor,fallback=scrollY) {
+    return anchor?.element.isConnected?Math.max(0,scrollY+anchor.element.getBoundingClientRect().top-anchor.top):fallback;
+  }
+  function lockScroll(anchorElement) {
+    if(scrollLocked)return;
+    cancelPageScroll();cancelAnimationFrame(scrollRestoreFrame);
+    scrollRestoring=false;
+    lockedX=scrollX;lockedY=scrollY;lockedAnchor=captureScrollAnchor(anchorElement);
+    const body=document.body.style;
+    lockBodyStyles={position:body.position,top:body.top,left:body.left,width:body.width};
+    scrollLocked=true;
+    document.documentElement.classList.remove('scroll-restoring');
+    document.documentElement.classList.add('scroll-locked');
+    body.position='fixed';body.top=-lockedY+'px';body.left=-lockedX+'px';body.width='100%';
+  }
+  function unlockScroll(focusTarget) {
+    if(!scrollLocked)return;
+    const x=lockedX,anchor=lockedAnchor;
+    let y=lockedY;
+    scrollRestoring=true;
+    document.documentElement.classList.add('scroll-restoring');
+    Object.assign(document.body.style,lockBodyStyles);
+    document.documentElement.classList.remove('scroll-locked');
+    scrollLocked=false;
+    window.scrollTo({left:x,top:y,behavior:'auto'});
+    if(layoutRefreshPending) {layoutRefreshPending=false;refreshLayout(anchor);y=scrollY;}
+    if(focusTarget?.isConnected)focusTarget.focus({preventScroll:true});
+    window.scrollTo({left:x,top:y,behavior:'auto'});
+    // 일부 모바일 브라우저는 dialog.close()의 포커스 복원을 다음 프레임에 처리합니다.
+    // 두 프레임 동안 저장한 위치를 유지해 Project·Certification에서 이탈하지 않게 합니다.
+    const restore=()=>window.scrollTo({left:x,top:y,behavior:'auto'});
+    scrollRestoreFrame=requestAnimationFrame(()=>{
+      if(scrollLocked)return;
+      restore();
+      scrollRestoreFrame=requestAnimationFrame(()=>{
+        if(scrollLocked)return;
+        restore();scrollRestoring=false;
+        document.documentElement.classList.remove('scroll-restoring');
+        // 복원 도중 가로 크기나 모션 설정이 바뀐 경우에도 보던 요소를 기준으로 정리합니다.
+        if(layoutRefreshPending) {layoutRefreshPending=false;refreshLayout(anchor);}
+        headerLastY=Math.max(0,scrollY);headerTravel=0;headerDirection=0;
+        updateActive();
+      });
+    });
+  }
   function openDialog(kind,html,opener=document.activeElement,small=false) {
     if(menuOpen)closeMenu(false);
     if(dialog.open)closeDialog(false);
@@ -372,7 +436,7 @@
     $('#dialog-content').scrollTop=0;
     publicSite.inert=true;
     document.body.classList.add('overlay-open');
-    lockScroll();
+    lockScroll(dialogOpener);
     dialog.showModal();
     prepareImages(dialog);
     (dialog.querySelector('h2')||dialog.querySelector('[data-close]'))?.focus({preventScroll:true});
@@ -383,8 +447,7 @@
     dialog.close();
     publicSite.inert=false;
     document.body.classList.remove('overlay-open');
-    unlockScroll();
-    if(restore&&dialogOpener?.isConnected)dialogOpener.focus({preventScroll:true});
+    unlockScroll(restore?dialogOpener:null);
   }
   // PROJECT_DETAIL: 텍스트와 원본 비율의 사진 목록을 좌우 패널에 배치합니다.
   function openProject(id,opener) {
@@ -438,16 +501,16 @@
 
   // MOBILE_MENU: 헤더 안에 메뉴를 유지하고 공개 본문·Footer·빠른 버튼만 비활성화합니다.
   function openMenu(){showHeader();menuOpen=true;$('#main-nav').classList.add('open');$('[data-menu]').setAttribute('aria-expanded','true');$('[data-menu]').setAttribute('aria-label','메뉴 닫기');document.body.classList.add('menu-open');$('#main-content').inert=true;$('.site-footer').inert=true;$('.quick-actions').inert=true;lockScroll();}
-  function closeMenu(restore=true){if(!menuOpen)return;menuOpen=false;$('#main-nav').classList.remove('open');$('[data-menu]').setAttribute('aria-expanded','false');$('[data-menu]').setAttribute('aria-label','메뉴 열기');document.body.classList.remove('menu-open');$('#main-content').inert=false;$('.site-footer').inert=false;$('.quick-actions').inert=false;unlockScroll();if(restore)$('[data-menu]').focus({preventScroll:true});}
+  function closeMenu(restore=true){if(!menuOpen)return;menuOpen=false;$('#main-nav').classList.remove('open');$('[data-menu]').setAttribute('aria-expanded','false');$('[data-menu]').setAttribute('aria-label','메뉴 열기');document.body.classList.remove('menu-open');$('#main-content').inert=false;$('.site-footer').inert=false;$('.quick-actions').inert=false;unlockScroll(restore?$('[data-menu]'):null);}
   // SCROLL: 앵커 이동에만 방문 기록·포커스를 추가합니다. 일반 스크롤은 활성 메뉴만 갱신합니다.
   let scrollFrame=0,scrollCancelled=false;
-  function scrollToAnchor(id){const target=document.getElementById(id);if(!target)return;if(menuOpen)closeMenu(false);cancelAnimationFrame(scrollFrame);scrollCancelled=false;showHeader();const start=scrollY,navHeight=$('.site-header').getBoundingClientRect().height,end=id==='home'?0:target.getBoundingClientRect().top+start-navHeight-24;
+  function scrollToAnchor(id){const target=document.getElementById(id);if(!target)return;if(menuOpen)closeMenu(false);cancelAnimationFrame(scrollRestoreFrame);scrollRestoring=false;document.documentElement.classList.remove('scroll-restoring');cancelAnimationFrame(scrollFrame);scrollCancelled=false;showHeader();const start=scrollY,navHeight=$('.site-header').getBoundingClientRect().height,end=id==='home'?0:target.getBoundingClientRect().top+start-navHeight-24;
     history.pushState(null,'','#'+id);const focusTarget=target.querySelector('h1,h2');const complete=()=>{if(!scrollCancelled)focusTarget?.focus({preventScroll:true});};
     if(reduced.matches){window.scrollTo({top:end,behavior:'instant'});complete();return;}const started=performance.now();function frame(now){if(scrollCancelled)return;const t=Math.min((now-started)/650,1),ease=1-Math.pow(1-t,3);window.scrollTo({top:start+(end-start)*ease,behavior:'instant'});if(t<1)scrollFrame=requestAnimationFrame(frame);else complete();}scrollFrame=requestAnimationFrame(frame);
   }
   ['wheel','touchstart'].forEach(name=>window.addEventListener(name,()=>{scrollCancelled=true;cancelAnimationFrame(scrollFrame);},{passive:true}));
   let scrollPending=false;
-  function updateActive(){scrollPending=false;updateHeaderVisibility();const threshold=($('.site-header')?.getBoundingClientRect().height||76)+45;let active='';for(const n of data.navigation){const rect=document.getElementById(n.id)?.getBoundingClientRect();if(rect&&rect.top<=threshold&&rect.bottom>threshold)active=n.id;}
+  function updateActive(){scrollPending=false;if(scrollLocked||scrollRestoring)return;updateHeaderVisibility();const threshold=($('.site-header')?.getBoundingClientRect().height||76)+45;let active='';for(const n of data.navigation){const rect=document.getElementById(n.id)?.getBoundingClientRect();if(rect&&rect.top<=threshold&&rect.bottom>threshold)active=n.id;}
     $$('.nav-links a').forEach(a=>{if(a.hash==='#'+active)a.setAttribute('aria-current','location');else a.removeAttribute('aria-current');});updateLearningScroll();updateCompetencies();updateExperience();}
   window.addEventListener('scroll',()=>{if(!scrollPending){scrollPending=true;requestAnimationFrame(updateActive);}},{passive:true});
   // EDUCATION: 아이패드는 sticky로 고정하고 페이지 스크롤을 내부 사진 레일에 연결합니다.
@@ -462,12 +525,12 @@
     box.querySelectorAll('[data-reveal]').forEach(el=>observer?.unobserve(el));
     learningIndex=Math.min(learningIndex,learningSlides.length-1);
     const navHeight=$('.site-header').getBoundingClientRect().height;
-    const stageHeight=Math.max(320,innerHeight-navHeight-32);
+    const stageHeight=Math.max(320,layoutHeight-navHeight-32);
     const narrow=innerWidth<900,padding=innerWidth<768?16:26;
     const availableWidth=narrow?box.clientWidth:(box.clientWidth-48)*.675;
     let tabletWidth=Math.max(140,Math.min(availableWidth,(stageHeight-(narrow?240:100))*4/3+padding));
     learningPinTop=navHeight+16;
-    learningPinned=learningSlides.length>1&&innerHeight>=580&&!reduced.matches;
+    learningPinned=learningSlides.length>1&&layoutHeight>=580&&!reduced.matches;
     learningDistance=0;
     box.style.setProperty('--pin-top',learningPinTop+'px');
     box.style.setProperty('--pin-height',stageHeight+'px');
@@ -492,7 +555,7 @@
     // 사진의 원본 비율로 예약된 높이를 사용해 긴 6·7번 사진의 끝까지 이동합니다.
     const screen=$('#learning-screen'),railElement=$('#learning-rail');
     learningTravel=Math.max(0,railElement.scrollHeight-screen.clientHeight);
-    learningDistance=screen.clientHeight?learningTravel/screen.clientHeight*Math.max(innerHeight*.75,400):0;
+    learningDistance=screen.clientHeight?learningTravel/screen.clientHeight*Math.max(layoutHeight*.75,400):0;
     box.style.setProperty('--pin-distance',learningDistance+'px');
     prepareImages(box);
     if(learningPinned)updateLearningScroll();
@@ -576,8 +639,30 @@
   document.addEventListener('keydown',event=>{if(event.key==='Tab')showHeader();if(['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(event.key)){scrollCancelled=true;cancelAnimationFrame(scrollFrame);}if(event.key==='Escape'&&menuOpen){event.preventDefault();closeMenu();}
     if(event.key==='Tab'&&(dialog.open||menuOpen)){const scope=dialog.open?dialog:$('.site-header');const focusables=[...scope.querySelectorAll('a[href],button:not(:disabled),[tabindex="0"],video[controls]')].filter(el=>!el.hidden&&el.getClientRects().length);const first=focusables[0],last=focusables.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
   document.addEventListener('focusin',event=>{event.target.closest('.reveal-pending')?.classList.add('is-visible');});
-  let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(menuOpen&&innerWidth>=834)closeMenu(false);prepareCompetencies();prepareExperience();prepareReveal();prepareLearning();fitProjectPreview();showHeader();},180);});
-  reduced.addEventListener('change',()=>{prepareCompetencies();prepareExperience();prepareReveal();prepareLearning();fitProjectPreview();});
+  function refreshLayout(anchor=captureScrollAnchor()) {
+    layoutWidth=innerWidth;layoutHeight=innerHeight;
+    prepareCompetencies();prepareExperience();prepareReveal();prepareLearning();fitProjectPreview();
+    window.scrollTo({top:anchorScrollY(anchor),behavior:'instant'});
+    showHeader();
+  }
+  let resizeTimer;
+  window.addEventListener('resize',()=>{
+    clearTimeout(resizeTimer);
+    const widthChanged=Math.abs(innerWidth-layoutWidth)>1;
+    const desktopHeightChanged=innerWidth>=768&&!touchViewport.matches&&Math.abs(innerHeight-layoutHeight)>1;
+    // 모바일 주소창의 접힘·펼침은 CSS의 dvh로 팝업 크기만 조절합니다.
+    if(!widthChanged&&!desktopHeightChanged)return;
+    if(scrollLocked||scrollRestoring) {layoutRefreshPending=true;return;}
+    resizeTimer=setTimeout(()=>{
+      if(scrollLocked||scrollRestoring) {layoutRefreshPending=true;return;}
+      if(menuOpen&&innerWidth>=834)closeMenu(false);
+      refreshLayout();
+    },180);
+  });
+  reduced.addEventListener('change',()=>{
+    if(scrollLocked||scrollRestoring) {layoutRefreshPending=true;return;}
+    refreshLayout();
+  });
   // 인쇄 직전에 상세를 펼치고 인쇄 후 원래 열린 상태로 되돌립니다.
   let printDetails=[];window.addEventListener('beforeprint',()=>{printDetails=$$('.static-detail').map(el=>({el,open:el.open}));printDetails.forEach(({el})=>el.open=true);});window.addEventListener('afterprint',()=>printDetails.forEach(({el,open})=>el.open=open));
   // 정적 HTML이 준비되면 공개 화면의 상호작용을 초기화합니다.

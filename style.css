@@ -67,6 +67,9 @@ p,li { text-wrap: pretty; }
 .contact-list a,.evidence-list a,.footer-contact a { overflow-wrap: anywhere; word-break: normal; }
 section[id],footer[id] { scroll-margin-top: calc(var(--nav-height) + 24px); }
 html { scroll-padding-top: calc(var(--nav-height) + 24px); scroll-padding-bottom: 120px; }
+/* 팝업·메뉴 닫기에서 부드러운 이동이나 자동 스크롤 보정이 원래 위치를 덮어쓰지 않게 합니다. */
+html.scroll-locked,html.scroll-restoring { scroll-behavior: auto !important; overflow-anchor: none; }
+html.scroll-locked { overflow: hidden; overscroll-behavior: none; }
 .container { width: min(var(--content-width),calc(100% - 96px)); margin-inline: auto; }
 .section { padding-block: var(--space-section); }
 #contact { background: var(--parchment); }
