@@ -275,7 +275,7 @@ button.tag[aria-pressed="true"] { border-color: var(--accent); background: var(-
 .learning-slide-width .media { display: block; height: auto; }
 .learning-slide-width img { width: 100%; height: auto; object-fit: contain; }
 .learning-slide-width .media-fallback { position: absolute; inset: 0; }
-/* 고정 연출을 사용하지 않는 작은 화면·모션 감소 환경에서는 아이패드 안에서 직접 스크롤합니다. */
+/* 동작 줄이기 설정 등 고정 연출을 사용하지 않는 환경에서는 아이패드 안에서 직접 스크롤합니다. */
 .learning-gallery:not(.is-pinned) .learning-viewport { overflow-y: auto; overscroll-behavior-y: contain; }
 .gallery-controls { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 16px; font-size: 14px; color: var(--color-muted); }
 /* 프로젝트는 사진 우선의 4열, 스킬은 3열 유틸리티 그리드입니다. */
@@ -785,9 +785,41 @@ dialog.project-dialog { width: min(1320px,calc(100% - 48px)); height: min(900px,
   .hero h1 { font-size: 26px; }
 }
 
+/* 모바일에서도 데스크톱과 같은 고정·순차·터치 반응을 사용합니다. */
+.competency-pin.is-pinned .competency-stage-inner { max-height: 100%; overflow-y: auto; overscroll-behavior-y: auto; scrollbar-width: thin; }
+.experience-pin.is-pinned .experience-body { min-height: 0; overflow-y: auto; overscroll-behavior-y: auto; scrollbar-width: thin; }
+.experience-pin.is-pinned .is-experience-neighbor .experience-body { overflow: hidden; }
+.learning-gallery.is-pinned .learning-copy { min-height: 0; max-height: 100%; overflow-y: auto; scrollbar-width: thin; }
+.project-card.is-touch-active,.project-card:active { scale: 1.025; translate: 0 -4px; z-index: 3; border-color: var(--primary); }
+.phone-device.is-touch-active .phone-housing,.phone-device:active .phone-housing { transform: translateY(-6px); }
+.skill-card { transition: opacity var(--motion-duration) ease-out,transform var(--motion-duration) cubic-bezier(.22,1,.36,1),translate 300ms ease,border-color 300ms ease; }
+.skill-card.is-touch-active,.skill-card:active,.skill-card:focus-within { translate: 0 -4px; border-color: var(--primary-on-dark); }
+button.credential-row.is-touch-active,button.credential-row:active { color: var(--primary); background: var(--blue-wash); }
+.level-fill { transform-origin: left center; transition: transform 850ms cubic-bezier(.22,1,.36,1); }
+.skill-card.reveal-pending .level-fill { transform: scaleX(0); }
+.skill-card.reveal-pending.is-visible .level-fill { transform: scaleX(1); }
+@media (hover: hover) and (pointer: fine) {
+  .skill-card:hover { translate: 0 -4px; border-color: var(--primary-on-dark); }
+}
+/* 가로로 눕힌 휴대폰에서는 설명과 아이패드를 나란히 놓아 고정 무대에 맞춥니다. */
+@media screen and (max-width: 899px) {
+  .motion-short-viewport .learning-gallery.is-pinned .learning-stage { grid-template-columns: minmax(0,.8fr) minmax(0,1.2fr); gap: 12px; align-items: center; }
+  .motion-short-viewport .learning-gallery.is-pinned .learning-copy h3 { font-size: 18px; margin: 4px 0 8px; }
+  .motion-short-viewport .learning-gallery.is-pinned .learning-title { font-size: 12px; line-height: 1.4; margin-bottom: 6px; }
+  .motion-short-viewport .learning-gallery.is-pinned .learning-copy .muted { font-size: 11px; line-height: 1.45; }
+  .motion-short-viewport .experience-pin.is-pinned .section-heading { gap: 4px; margin-bottom: 8px; }
+  .motion-short-viewport .experience-pin.is-pinned .section-heading h2 { font-size: 20px; }
+  .motion-short-viewport .experience-pin.is-pinned .section-heading .eyebrow { margin-bottom: 4px; }
+  .motion-short-viewport .experience-pin.is-pinned .section-heading > p { font-size: 10px; line-height: 1.3; }
+  .motion-short-viewport .experience-progress { margin-top: 6px; }
+  .motion-short-viewport .competency-pin.is-pinned .competency-heading { font-size: 20px; margin-bottom: 12px; }
+  .motion-short-viewport .competency-pin.is-pinned .about-row { margin-top: 12px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,*::before,*::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .reveal-pending { opacity: 1; transform: none; }
+  .skill-card.reveal-pending .level-fill { transform: none; }
 }
 /* 인쇄에서는 고정 무대와 사진 레일을 풀어 모든 내용을 표시합니다. */
 @media print {
@@ -805,7 +837,7 @@ dialog.project-dialog { width: min(1320px,calc(100% - 48px)); height: min(900px,
   .project-card,.skill-card,.experience-card { break-inside: avoid; }
   .skill-card { background: var(--canvas); }
   .education-emphasis { color: var(--ink); }
-  .level-fill { background: var(--ink); }
+  .level-fill { background: var(--ink); transform: none !important; }
   .static-detail { display: block !important; }
   .learning-stage { display: block; }
   .learning-viewport,.learning-gallery:not(.is-pinned) .learning-viewport { aspect-ratio: auto; overflow: visible; }
