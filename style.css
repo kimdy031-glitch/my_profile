@@ -492,9 +492,10 @@ dialog::backdrop { background: var(--modal-backdrop); backdrop-filter: blur(8px)
 .detail-section ul { margin-top: 12px; padding-left: 24px; }
 dialog.project-dialog { width: min(1320px,calc(100% - 48px)); height: min(900px,calc(100dvh - 48px)); max-height: calc(100dvh - 48px); }
 .project-dialog .dialog-content { display: block; flex: 1; min-height: 0; padding: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; }
-.project-detail-layout { display: block; min-width: 0; }
+/* 프로젝트 상세: 768px 이상은 글·사진을 좌우로 배치하며, 팝업 전체가 함께 스크롤됩니다. */
+.project-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.1fr); align-items: start; min-width: 0; }
 .project-text-panel,.project-media-panel { min-width: 0; overflow: visible; padding: 32px; }
-.project-text-panel { border-bottom: 1px solid var(--hairline); }
+.project-text-panel { border-right: 1px solid var(--hairline); }
 .project-text-panel h2 { font-size: 34px; line-height: 1.4; }
 .project-text-panel .project-meta { display: grid; gap: 8px; }
 .project-media-panel { background: var(--parchment); }
@@ -547,9 +548,7 @@ dialog.project-dialog { width: min(1320px,calc(100% - 48px)); height: min(900px,
   .learning-copy h3 { margin: 12px 0 16px; font-size: 28px; }
   .learning-title { font-size: 17px; margin-bottom: 12px; }
   dialog.project-dialog { width: calc(100% - 24px); height: calc(100dvh - 32px - env(safe-area-inset-bottom)); max-height: calc(100dvh - 32px - env(safe-area-inset-bottom)); }
-  .project-detail-layout { display: block; }
   .project-text-panel,.project-media-panel { padding: 24px; }
-  .project-text-panel { border-right: 0; border-bottom: 1px solid var(--hairline); }
   .project-text-panel h2 { font-size: 28px; }
 }
 @media (max-width: 833px) {
@@ -758,6 +757,9 @@ dialog.project-dialog { width: min(1320px,calc(100% - 48px)); height: min(900px,
   .dialog-head .eyebrow { font-size: 10px; }
   .dialog-content { padding: 20px 16px 28px; }
   .project-dialog .dialog-content { scrollbar-gutter: auto; }
+  /* 휴대폰에서는 글 아래에 사진 목록을 이어 배치합니다. */
+  .project-detail-layout { display: block; }
+  .project-text-panel { border-right: 0; border-bottom: 1px solid var(--hairline); }
   .project-text-panel { padding: 20px 16px; }
   .project-media-panel { padding: 12px 8px; }
   .project-text-panel h2,.dialog-content h2 { font-size: 22px; line-height: 1.5; }

@@ -89,8 +89,8 @@
   // ASSET: 일반 사진과 휴대폰 화면의 로딩·오류를 감지합니다.
   // 휴대폰 사진이 없으면 프레임 크기를 유지하며 중립적인 자리표시를 보여줍니다.
   function prepareImages(scope=document) {
-    scope.querySelectorAll('.media img,.phone-screen img,.media video').forEach(element=>{
-      const box=element.closest('.media,.phone-screen');
+    scope.querySelectorAll('.media img,.phone-screen img,.competency-marker img,.media video').forEach(element=>{
+      const box=element.closest('.media,.phone-screen,.competency-marker');
       if(!box)return;
       const isImage=element.tagName==='IMG';
       const markLoaded=()=>{box.classList.remove('failed');box.classList.add('loaded');};
@@ -449,7 +449,8 @@
     document.body.classList.remove('overlay-open');
     unlockScroll(restore?dialogOpener:null);
   }
-  // PROJECT_DETAIL: 텍스트와 원본 비율의 사진 목록을 좌우 패널에 배치합니다.
+  // PROJECT_DETAIL: 컴퓨터는 글·사진을 좌우로, 모바일은 글 아래 사진으로 배치합니다(CSS).
+  // 두 패널의 스크롤은 팝업의 dialog-content 하나에서 함께 처리합니다.
   function openProject(id,opener) {
     const project=data.projects.find(item=>item.id===id);
     if(!project)return;
