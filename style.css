@@ -788,6 +788,9 @@ dialog.project-dialog { width: min(1320px,calc(100% - 48px)); height: min(900px,
 /* 모바일에서도 데스크톱과 같은 고정·순차·터치 반응을 사용합니다. */
 .competency-pin.is-pinned .competency-stage-inner { max-height: 100%; overflow-y: auto; overscroll-behavior-y: auto; scrollbar-width: thin; }
 .experience-pin.is-pinned .experience-body { min-height: 0; overflow-y: auto; overscroll-behavior-y: auto; scrollbar-width: thin; }
+/* 경력 고정 구간에서만 세로 스와이프를 직접 처리합니다. 가로 제스처·핀치 확대는 유지합니다. */
+.experience-pin.is-pinned.is-step-controlled .experience-stage { touch-action: pan-x pinch-zoom; overscroll-behavior-y: contain; }
+.experience-pin.is-pinned.is-step-controlled .experience-body { overscroll-behavior-y: contain; }
 .experience-pin.is-pinned .is-experience-neighbor .experience-body { overflow: hidden; }
 .learning-gallery.is-pinned .learning-copy { min-height: 0; max-height: 100%; overflow-y: auto; scrollbar-width: thin; }
 .project-card.is-touch-active,.project-card:active { scale: 1.025; translate: 0 -4px; z-index: 3; border-color: var(--primary); }
@@ -801,9 +804,9 @@ button.credential-row.is-touch-active,button.credential-row:active { color: var(
 @media (hover: hover) and (pointer: fine) {
   .skill-card:hover { translate: 0 -4px; border-color: var(--primary-on-dark); }
 }
-/* 가로로 눕힌 휴대폰에서는 설명과 아이패드를 나란히 놓아 고정 무대에 맞춥니다. */
+/* 모바일은 화면 높이와 관계없이 글 위·아이패드 아래 순서를 유지합니다. */
 @media screen and (max-width: 899px) {
-  .motion-short-viewport .learning-gallery.is-pinned .learning-stage { grid-template-columns: minmax(0,.8fr) minmax(0,1.2fr); gap: 12px; align-items: center; }
+  .motion-short-viewport .learning-gallery.is-pinned .learning-stage { grid-template-columns: minmax(0,1fr); gap: 12px; align-content: center; }
   .motion-short-viewport .learning-gallery.is-pinned .learning-copy h3 { font-size: 18px; margin: 4px 0 8px; }
   .motion-short-viewport .learning-gallery.is-pinned .learning-title { font-size: 12px; line-height: 1.4; margin-bottom: 6px; }
   .motion-short-viewport .learning-gallery.is-pinned .learning-copy .muted { font-size: 11px; line-height: 1.45; }
@@ -814,6 +817,40 @@ button.credential-row.is-touch-active,button.credential-row:active { color: var(
   .motion-short-viewport .experience-progress { margin-top: 6px; }
   .motion-short-viewport .competency-pin.is-pinned .competency-heading { font-size: 20px; margin-bottom: 12px; }
   .motion-short-viewport .competency-pin.is-pinned .about-row { margin-top: 12px; }
+}
+
+/* MOBILE LEARNING: 모바일 학습 기록만 한 화면 전체 높이로 고정합니다.
+   상단 여백은 내비게이션·노치용, 하단 여백은 홈 인디케이터용입니다.
+   아이패드의 세로 크기는 남은 화면을 채우며 사진 비율은 contain으로 유지합니다. */
+@media screen {
+  .learning-gallery.is-mobile-fullscreen.is-pinned .learning-stage {
+    display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start;
+    gap: 12px; padding-top: calc(var(--nav-height) + 8px);
+    padding-bottom: max(12px,env(safe-area-inset-bottom,0px));
+    min-height: 0; background: var(--tile-deep);
+  }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .learning-copy {
+    flex: 0 0 auto; height: min(var(--learning-copy-height),38%); max-height: 38%;
+    min-height: 0; width: 100%; overflow-y: auto;
+  }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .learning-copy .eyebrow { font-size: 10px; }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .learning-copy h3 { font-size: 23px; margin: 6px 0 10px; }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .learning-title { font-size: 15px; line-height: 1.4; margin-bottom: 6px; }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .learning-copy .muted { font-size: 12px; line-height: 1.55; }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .tablet-wrap {
+    display: flex; flex-direction: column; flex: 1 1 0; min-height: 0;
+    width: 100%; max-width: 100%; align-self: center;
+  }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .tablet { flex: 1 1 0; min-height: 0; padding: 8px; border-radius: 16px; }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .tablet::before { top: 2px; }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .learning-viewport { height: 100%; aspect-ratio: auto; border-radius: 8px; }
+  .learning-gallery.is-mobile-fullscreen.is-pinned .gallery-controls { flex: 0 0 44px; min-height: 44px; margin-top: 10px; font-size: 12px; gap: 12px; }
+  /* 가로 방향처럼 낮은 화면에서도 글이 아이패드 위에 남도록 간격·글자만 줄입니다. */
+  .motion-short-viewport .learning-gallery.is-mobile-fullscreen.is-pinned .learning-stage { gap: 8px; }
+  .motion-short-viewport .learning-gallery.is-mobile-fullscreen.is-pinned .learning-copy h3 { font-size: 18px; margin: 3px 0 5px; }
+  .motion-short-viewport .learning-gallery.is-mobile-fullscreen.is-pinned .learning-title { font-size: 12px; margin-bottom: 4px; }
+  .motion-short-viewport .learning-gallery.is-mobile-fullscreen.is-pinned .learning-copy .muted { font-size: 11px; line-height: 1.4; }
+  .motion-short-viewport .learning-gallery.is-mobile-fullscreen.is-pinned .gallery-controls { margin-top: 6px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

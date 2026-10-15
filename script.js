@@ -244,6 +244,7 @@
     return {gap,neighbor,card:Math.min(naturalHeight,Math.max(1,height-neighbor*1.8-gap*2))};
   }
   function prepareExperience() {
+    cancelExperienceMotion();
     // 기간이 줄바꿈될 수 있으므로 근무 기간을 먼저 표시한 후 카드 높이를 측정합니다.
     updateExperienceDurations();
     const pin=$('#experience-pin'),viewport=$('#experience-viewport'),status=$('#experience-progress');
@@ -266,6 +267,7 @@
     pin.style.setProperty('--experience-distance',experienceCards.length*experienceStep+'px');
     pin.style.removeProperty('--experience-card-height');
     experiencePinned=!reduced.matches&&experienceCards.length>=3;
+    pin.classList.remove('is-step-controlled');
     pin.classList.toggle('is-pinned',experiencePinned);
     status.hidden=!experiencePinned;
     status.textContent='01 / '+String(experienceCards.length).padStart(2,'0');
@@ -290,6 +292,7 @@
     if(!experiencePinned)return;
     const pin=$('#experience-pin');
     const distance=experiencePinTop-pin.getBoundingClientRect().top;
+    pin.classList.toggle('is-step-controlled',distance>=0&&distance<experienceCards.length*experienceStep);
     const index=Math.max(0,Math.min(experienceCards.length-1,Math.floor(Math.max(0,distance)/experienceStep)));
     if(index===experienceIndex)return;
     experienceIndex=index;
@@ -318,9 +321,125 @@
     else return false;
     index=Math.max(0,Math.min(experienceCards.length-1,index));
     const start=$('#experience-pin').getBoundingClientRect().top+scrollY-experiencePinTop;
-    window.scrollTo({top:start+index*experienceStep+1,behavior:'smooth'});
+    cancelExperienceMotion();
+    animateExperienceTo(start+(index+.5)*experienceStep);
     return true;
   }
+  // EXPERIENCE GESTURE: 이 구간만 한 스와이프·휠 묶음에 경력 하나씩 이동합니다.
+  // CSS touch-action과 non-passive touchmove로 모바일의 기본 관성 이동을 막습니다.
+  let experienceFrame=0,experienceAnimating=false,experienceTargetY=null,experienceAnimationY=0,experienceHoldUntil=0;
+  let experienceLastY=scrollY,experienceRecentInput=-Infinity,experienceTouch=null,experienceInputType='';
+  let experienceWheelDelta=0,experienceWheelCommitted=false,experienceWheelContent=null,experienceWheelTimer=0;
+  function experienceBounds() {
+    if(!experiencePinned||reduced.matches||scrollLocked||scrollRestoring||menuOpen||dialog.open)return null;
+    const start=$('#experience-pin').getBoundingClientRect().top+scrollY-experiencePinTop;
+    return {start,end:start+experienceCards.length*experienceStep};
+  }
+  function insideExperience(bounds,y=scrollY) {return bounds&&y>=bounds.start&&y<bounds.end;}
+  function cancelExperienceMotion() {
+    cancelAnimationFrame(experienceFrame);clearTimeout(experienceWheelTimer);
+    experienceAnimating=false;experienceTargetY=null;experienceHoldUntil=0;
+    experienceTouch=null;experienceWheelDelta=0;experienceWheelCommitted=false;experienceWheelContent=null;
+    experienceRecentInput=-Infinity;experienceInputType='';experienceLastY=scrollY;
+  }
+  function animateExperienceTo(target) {
+    cancelPageScroll();cancelAnimationFrame(experienceFrame);
+    const startY=scrollY,started=performance.now();
+    experienceTargetY=Math.max(0,target);experienceAnimationY=startY;experienceAnimating=true;
+    function frame(now) {
+      const t=Math.min(1,Math.max(0,(now-started)/260)),ease=1-Math.pow(1-t,3);
+      experienceAnimationY=startY+(experienceTargetY-startY)*ease;
+      window.scrollTo({top:experienceAnimationY,behavior:'instant'});
+      if(t<1)experienceFrame=requestAnimationFrame(frame);
+      else {experienceAnimating=false;experienceHoldUntil=now+260;updateActive();}
+    }
+    experienceFrame=requestAnimationFrame(frame);
+  }
+  function stepExperienceGesture(direction) {
+    const bounds=experienceBounds();if(!bounds)return;
+    const index=Math.max(0,Math.min(experienceCards.length-1,Math.floor((scrollY-bounds.start)/experienceStep)));
+    const next=index+direction,exitDistance=Math.min(200,Math.max(100,layoutHeight*.25));
+    // 첫 항목에서 위로, 마지막 항목에서 아래로 한 번 더 스와이프하면 고정 구간을 벗어납니다.
+    const target=next<0?bounds.start-exitDistance:next>=experienceCards.length?bounds.end+exitDistance:bounds.start+(next+.5)*experienceStep;
+    animateExperienceTo(target);
+  }
+  function experienceContentCanMove(element,delta) {
+    return element&&element.scrollHeight>element.clientHeight+1&&
+      (delta>0?element.scrollTop+element.clientHeight<element.scrollHeight-1:element.scrollTop>1);
+  }
+  function guardExperienceMomentum() {
+    const previous=experienceLastY,y=scrollY,now=performance.now();experienceLastY=y;
+    const bounds=experienceBounds();if(!bounds)return false;
+    if(experienceAnimating) {
+      if(Math.abs(y-experienceAnimationY)>1) {
+        window.scrollTo({top:experienceAnimationY,behavior:'instant'});experienceLastY=experienceAnimationY;return true;
+      }
+      return false;
+    }
+    // 이미 처리한 제스처의 관성 꼬리가 다시 페이지 위치를 바꾸면 마지막 스냅 위치를 유지합니다.
+    if(experienceTargetY!==null&&now<experienceHoldUntil&&Math.abs(y-experienceTargetY)>1) {
+      experienceHoldUntil=now+150;
+      window.scrollTo({top:experienceTargetY,behavior:'instant'});experienceLastY=experienceTargetY;return true;
+    }
+    // 위·아래 구간에서 날아온 관성 스크롤도 처음 만나는 경력 하나에서 멈춥니다.
+    if(now-experienceRecentInput<800&&((previous<bounds.start&&y>=bounds.start)||(previous>=bounds.end&&y<bounds.end))) {
+      if(experienceTouch) {experienceTouch.claimed=true;experienceTouch.committed=true;}
+      if(experienceInputType==='wheel')experienceWheelCommitted=true;
+      animateExperienceTo(previous<bounds.start?bounds.start+experienceStep*.5:bounds.end-experienceStep*.5);
+      return true;
+    }
+    return false;
+  }
+  window.addEventListener('touchstart',event=>{
+    if(event.touches.length!==1) {cancelExperienceMotion();return;}
+    clearTimeout(experienceWheelTimer);experienceWheelCommitted=false;experienceWheelDelta=0;experienceWheelContent=null;
+    experienceHoldUntil=0;experienceInputType='touch';experienceRecentInput=performance.now();experienceLastY=scrollY;
+    const point=event.touches[0],ignore=event.target.closest('a,button,input,textarea,select,[contenteditable]');
+    experienceTouch={x:point.clientX,y:point.clientY,lastY:point.clientY,claimed:false,committed:experienceAnimating,
+      content:null,contentChosen:false,body:event.target.closest('.is-experience-active .experience-body'),ignore:!!ignore};
+  },{passive:true});
+  window.addEventListener('touchmove',event=>{
+    const gesture=experienceTouch;if(!gesture||gesture.ignore||event.touches.length!==1)return;
+    const point=event.touches[0],delta=gesture.y-point.clientY,increment=gesture.lastY-point.clientY;
+    if(Math.abs(point.clientX-gesture.x)>Math.abs(delta)+8)return;
+    const bounds=experienceBounds();if(!gesture.claimed&&!insideExperience(bounds))return;
+    if(event.cancelable)event.preventDefault();
+    gesture.claimed=true;gesture.lastY=point.clientY;experienceRecentInput=performance.now();
+    if(gesture.committed||experienceAnimating)return;
+    if(!gesture.contentChosen&&Math.abs(delta)>=8) {
+      gesture.contentChosen=true;
+      if(experienceContentCanMove(gesture.body,delta))gesture.content=gesture.body;
+    }
+    // 설명이 긴 카드에서는 손가락 이동량만큼만 읽고, 같은 제스처로 다음 경력까지 넘기지 않습니다.
+    if(gesture.content) {gesture.content.scrollTop+=increment;return;}
+    if(Math.abs(delta)>=36) {gesture.committed=true;stepExperienceGesture(delta>0?1:-1);}
+  },{passive:false});
+  const endExperienceTouch=()=>{experienceTouch=null;};
+  window.addEventListener('touchend',endExperienceTouch,{passive:true});
+  window.addEventListener('touchcancel',endExperienceTouch,{passive:true});
+  window.addEventListener('wheel',event=>{
+    if(event.ctrlKey) {cancelExperienceMotion();return;}
+    if(Math.abs(event.deltaX)>Math.abs(event.deltaY)||!event.deltaY)return;
+    experienceInputType='wheel';experienceRecentInput=performance.now();
+    const bounds=experienceBounds();
+    clearTimeout(experienceWheelTimer);
+    experienceWheelTimer=setTimeout(()=>{
+      experienceWheelDelta=0;experienceWheelCommitted=false;experienceWheelContent=null;experienceHoldUntil=0;
+    },240);
+    if(!insideExperience(bounds)) {if(!experienceAnimating&&!experienceWheelCommitted)experienceHoldUntil=0;return;}
+    if(event.cancelable)event.preventDefault();
+    if(experienceWheelCommitted||experienceAnimating) {experienceHoldUntil=performance.now()+260;return;}
+    const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?layoutHeight:1);
+    const body=event.target.closest('.is-experience-active .experience-body');
+    if(experienceWheelContent||experienceContentCanMove(body,delta)) {
+      experienceWheelContent=experienceWheelContent||body;experienceWheelContent.scrollTop+=delta;return;
+    }
+    experienceWheelDelta+=delta;
+    if(Math.abs(experienceWheelDelta)>=40) {experienceWheelCommitted=true;stepExperienceGesture(experienceWheelDelta>0?1:-1);}
+  },{passive:false});
+  window.addEventListener('blur',cancelExperienceMotion);
+  window.addEventListener('popstate',cancelExperienceMotion);
+
   // PROJECT FIT: 화면 높이와 첫 줄 본문 높이를 측정해 사진 영역만 추가로 맞춥니다.
   function fitProjectPreview() {
     const section=$('#project'),grid=$('#project-grid');
@@ -391,6 +510,7 @@
   }
   function lockScroll(anchorElement) {
     if(scrollLocked)return;
+    cancelExperienceMotion();
     cancelPageScroll();cancelAnimationFrame(scrollRestoreFrame);
     scrollRestoring=false;
     lockedX=scrollX;lockedY=scrollY;lockedAnchor=captureScrollAnchor(anchorElement);
@@ -511,17 +631,17 @@
   function closeMenu(restore=true){if(!menuOpen)return;menuOpen=false;$('#main-nav').classList.remove('open');$('[data-menu]').setAttribute('aria-expanded','false');$('[data-menu]').setAttribute('aria-label','메뉴 열기');document.body.classList.remove('menu-open');$('#main-content').inert=false;$('.site-footer').inert=false;$('.quick-actions').inert=false;unlockScroll(restore?$('[data-menu]'):null);}
   // SCROLL: 앵커 이동에만 방문 기록·포커스를 추가합니다. 일반 스크롤은 활성 메뉴만 갱신합니다.
   let scrollFrame=0,scrollCancelled=false;
-  function scrollToAnchor(id){const target=document.getElementById(id);if(!target)return;if(menuOpen)closeMenu(false);cancelAnimationFrame(scrollRestoreFrame);scrollRestoring=false;document.documentElement.classList.remove('scroll-restoring');cancelAnimationFrame(scrollFrame);scrollCancelled=false;showHeader();const start=scrollY,navHeight=$('.site-header').getBoundingClientRect().height,end=id==='home'?0:target.getBoundingClientRect().top+start-navHeight-24;
+  function scrollToAnchor(id){const target=document.getElementById(id);if(!target)return;cancelExperienceMotion();if(menuOpen)closeMenu(false);cancelAnimationFrame(scrollRestoreFrame);scrollRestoring=false;document.documentElement.classList.remove('scroll-restoring');cancelAnimationFrame(scrollFrame);scrollCancelled=false;showHeader();const start=scrollY,navHeight=$('.site-header').getBoundingClientRect().height,end=id==='home'?0:target.getBoundingClientRect().top+start-navHeight-24;
     history.pushState(null,'','#'+id);const focusTarget=target.querySelector('h1,h2');const complete=()=>{if(!scrollCancelled)focusTarget?.focus({preventScroll:true});};
     if(reduced.matches){window.scrollTo({top:end,behavior:'instant'});complete();return;}const started=performance.now();function frame(now){if(scrollCancelled)return;const t=Math.min((now-started)/650,1),ease=1-Math.pow(1-t,3);window.scrollTo({top:start+(end-start)*ease,behavior:'instant'});if(t<1)scrollFrame=requestAnimationFrame(frame);else complete();}scrollFrame=requestAnimationFrame(frame);
   }
   ['wheel','touchstart'].forEach(name=>window.addEventListener(name,()=>{scrollCancelled=true;cancelAnimationFrame(scrollFrame);},{passive:true}));
   let scrollPending=false;
-  function updateActive(){scrollPending=false;if(scrollLocked||scrollRestoring)return;updateHeaderVisibility();const threshold=($('.site-header')?.getBoundingClientRect().height||76)+45;let active='';for(const n of data.navigation){const rect=document.getElementById(n.id)?.getBoundingClientRect();if(rect&&rect.top<=threshold&&rect.bottom>threshold)active=n.id;}
+  function updateActive(){scrollPending=false;if(scrollLocked||scrollRestoring)return;if(guardExperienceMomentum())return;updateHeaderVisibility();const threshold=($('.site-header')?.getBoundingClientRect().height||76)+45;let active='';for(const n of data.navigation){const rect=document.getElementById(n.id)?.getBoundingClientRect();if(rect&&rect.top<=threshold&&rect.bottom>threshold)active=n.id;}
     $$('.nav-links a').forEach(a=>{if(a.hash==='#'+active)a.setAttribute('aria-current','location');else a.removeAttribute('aria-current');});updateLearningScroll();updateCompetencies();updateExperience();}
   window.addEventListener('scroll',()=>{if(!scrollPending){scrollPending=true;requestAnimationFrame(updateActive);}},{passive:true});
   // EDUCATION: 아이패드는 sticky로 고정하고 페이지 스크롤을 내부 사진 레일에 연결합니다.
-  let learningSlides=[],learningIndex=0,learningPinned=false,learningDistance=0,learningPinTop=0,learningTravel=0,learningReady=false;
+  let learningSlides=[],learningIndex=0,learningPinned=false,learningDistance=0,learningPinTop=0,learningTravel=0,learningReady=false,learningMobileFullscreen=false;
   function prepareLearning() {
     const box=$('#learning-gallery');
     // 모바일 브라우저 높이가 바뀌어도 긴 사진을 읽던 위치를 유지합니다.
@@ -532,15 +652,21 @@
     box.querySelectorAll('[data-reveal]').forEach(el=>observer?.unobserve(el));
     learningIndex=Math.min(learningIndex,learningSlides.length-1);
     const navHeight=$('.site-header').getBoundingClientRect().height;
-    const stageHeight=Math.max(160,layoutHeight-navHeight-32);
-    const narrow=innerWidth<900,padding=innerWidth<768?16:26;
+    learningPinned=learningSlides.length>1&&!reduced.matches;
+    // 휴대폰은 가로로 돌려도 한 화면에 글 위·아이패드 아래 순서로 표시합니다.
+    // 데스크톱의 2열 배치와 고정 위치는 기존 값을 유지합니다.
+    learningMobileFullscreen=learningPinned&&(innerWidth<768||(touchViewport.matches&&innerWidth<1069));
+    const stageHeight=learningMobileFullscreen?layoutHeight:Math.max(160,layoutHeight-navHeight-32);
+    const narrow=innerWidth<900||learningMobileFullscreen,padding=innerWidth<768?16:26;
     const availableWidth=narrow?box.clientWidth:(box.clientWidth-48)*.675;
     let tabletWidth=Math.max(64,availableWidth);
-    learningPinTop=navHeight+16;
-    learningPinned=learningSlides.length>1&&!reduced.matches;
+    learningPinTop=learningMobileFullscreen?0:navHeight+16;
     learningDistance=0;
+    box.classList.toggle('is-mobile-fullscreen',learningMobileFullscreen);
     box.style.setProperty('--pin-top',learningPinTop+'px');
-    box.style.setProperty('--pin-height',stageHeight+'px');
+    // dvh는 주소창이 접히고 펼쳐질 때도 실제 보이는 화면 높이를 채웁니다.
+    // 지원하지 않는 브라우저는 최초 측정 높이를 사용합니다.
+    box.style.setProperty('--pin-height',learningMobileFullscreen&&typeof CSS!=='undefined'&&CSS.supports('height','100dvh')?'100dvh':stageHeight+'px');
     box.style.setProperty('--pin-distance',learningDistance+'px');
     box.style.setProperty('--tablet-width',tabletWidth+'px');
     box.classList.toggle('is-pinned',learningPinned);
@@ -562,17 +688,23 @@
         title.textContent=slide.title;description.textContent=slide.description;
         return copy.scrollHeight;
       }));
-      const copyBudget=sideBySide?stageHeight:Math.max(64,stageHeight-controlsHeight-padding-gap-112);
-      copy.style.height=Math.min(copyHeight,copyBudget)+'px';
+      if(learningMobileFullscreen) {
+        // 가장 긴 설명 높이를 예약하고, 남는 높이는 아이패드가 모두 사용합니다.
+        // 화면 높이 변화에는 CSS만 대응해 전체 페이지의 고정 구간을 재생성하지 않습니다.
+        box.style.setProperty('--learning-copy-height',copyHeight+'px');
+      } else {
+        const copyBudget=sideBySide?stageHeight:Math.max(64,stageHeight-controlsHeight-padding-gap-112);
+        copy.style.height=Math.min(copyHeight,copyBudget)+'px';
+      }
       title.textContent=learningSlides[learningIndex].title;
       description.textContent=learningSlides[learningIndex].description;
     }
     const screenBudget=Math.max(64,stageHeight-controlsHeight-padding-(sideBySide?0:copy.offsetHeight+gap));
-    tabletWidth=learningPinned?Math.min(widthLimit,screenBudget*4/3+padding):widthLimit;
+    tabletWidth=learningPinned&&!learningMobileFullscreen?Math.min(widthLimit,screenBudget*4/3+padding):widthLimit;
     box.style.setProperty('--tablet-width',Math.max(1,tabletWidth)+'px');
     // 사진의 원본 비율로 예약된 높이를 사용해 긴 6·7번 사진의 끝까지 이동합니다.
-    const screen=$('#learning-screen'),railElement=$('#learning-rail');
-    learningTravel=Math.max(0,railElement.scrollHeight-screen.clientHeight);
+    const screen=$('#learning-screen');
+    learningTravel=measureLearningTravel();
     learningDistance=screen.clientHeight?learningTravel/screen.clientHeight*Math.max(layoutHeight*.75,400):0;
     box.style.setProperty('--pin-distance',learningDistance+'px');
     prepareImages(box);
@@ -585,6 +717,12 @@
     // 일반 스크롤 환경에서도 화면에 보이는 사진에 맞춰 설명과 번호를 갱신합니다.
     if(!learningPinned)screen.addEventListener('scroll',()=>setLearning(learningIndexAt(screen.scrollTop),false),{passive:true});
     prepareReveal(box);
+  }
+  // 화면만 커지거나 작아졌을 때 사진 레일의 실제 이동 길이를 다시 읽습니다.
+  // 페이지의 고정 스크롤 거리는 유지하므로 주소창 때문에 다른 구간으로 튀지 않습니다.
+  function measureLearningTravel() {
+    const screen=$('#learning-screen'),rail=$('#learning-rail');
+    return screen&&rail?Math.max(0,rail.scrollHeight-screen.clientHeight):0;
   }
   // 화면 중심에 보이는 사진의 순번을 찾습니다. 세로로 긴 사진도 같은 제목을 유지합니다.
   function learningIndexAt(offset) {
@@ -600,6 +738,7 @@
   // 페이지 진행률을 사진 전체 높이에 연결해 6·7번의 아래쪽까지 읽을 수 있습니다.
   function updateLearningScroll() {
     if(!learningPinned||!learningDistance)return;
+    if(learningMobileFullscreen)learningTravel=measureLearningTravel();
     const box=$('#learning-gallery');
     const progress=Math.max(0,Math.min(1,(learningPinTop-box.getBoundingClientRect().top)/learningDistance));
     const offset=progress*learningTravel,rail=$('#learning-rail');
@@ -632,6 +771,7 @@
   function stepLearning(direction) {
     const index=Math.max(0,Math.min(learningSlides.length-1,learningIndex+direction));
     if(!learningPinned){setLearning(index);return;}
+    if(learningMobileFullscreen)learningTravel=measureLearningTravel();
     const box=$('#learning-gallery');
     const start=box.getBoundingClientRect().top+scrollY-learningPinTop;
     window.scrollTo({top:start+(learningTravel?learningOffsetAt(index)/learningTravel:0)*learningDistance,behavior:reduced.matches?'instant':'smooth'});
@@ -671,7 +811,7 @@
   });
   let downOutside=false;dialog.addEventListener('pointerdown',e=>downOutside=e.target===dialog);dialog.addEventListener('pointerup',e=>{if(downOutside&&e.target===dialog){const rect=dialog.getBoundingClientRect();if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)closeDialog();}downOutside=false;});
   dialog.addEventListener('cancel',event=>{event.preventDefault();closeDialog();});
-  document.addEventListener('keydown',event=>{if(event.key==='Tab')showHeader();if(['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(event.key)){scrollCancelled=true;cancelAnimationFrame(scrollFrame);}if(event.key==='Escape'&&menuOpen){event.preventDefault();closeMenu();}
+  document.addEventListener('keydown',event=>{if(event.key==='Tab')showHeader();if(['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '].includes(event.key)){if(!event.defaultPrevented)cancelExperienceMotion();scrollCancelled=true;cancelAnimationFrame(scrollFrame);}if(event.key==='Escape'&&menuOpen){event.preventDefault();closeMenu();}
     if(event.key==='Tab'&&(dialog.open||menuOpen)){const scope=dialog.open?dialog:$('.site-header');const focusables=[...scope.querySelectorAll('a[href],button:not(:disabled),[tabindex="0"],video[controls]')].filter(el=>!el.hidden&&el.getClientRects().length);const first=focusables[0],last=focusables.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
   document.addEventListener('focusin',event=>{event.target.closest('.reveal-pending')?.classList.add('is-visible');});
   function refreshLayout(anchor=captureScrollAnchor()) {
@@ -686,8 +826,11 @@
     clearTimeout(resizeTimer);
     const widthChanged=Math.abs(innerWidth-layoutWidth)>1;
     const desktopHeightChanged=innerWidth>=768&&!touchViewport.matches&&Math.abs(innerHeight-layoutHeight)>1;
-    // 모바일 주소창의 접힘·펼침은 CSS의 dvh로 팝업 크기만 조절합니다.
-    if(!widthChanged&&!desktopHeightChanged)return;
+    // 모바일 주소창은 CSS dvh와 사진 레일만 갱신하고 고정 거리·스크롤 위치는 유지합니다.
+    if(!widthChanged&&!desktopHeightChanged) {
+      if(!scrollLocked&&!scrollRestoring)updateLearningScroll();
+      return;
+    }
     if(scrollLocked||scrollRestoring) {layoutRefreshPending=true;return;}
     resizeTimer=setTimeout(()=>{
       if(scrollLocked||scrollRestoring) {layoutRefreshPending=true;return;}
@@ -695,6 +838,11 @@
       refreshLayout();
     },180);
   });
+  // Safari 등에서 주소창 높이만 바뀌어도 아이패드의 마지막 사진까지 맞춰 표시합니다.
+  window.visualViewport?.addEventListener('resize',()=>{
+    if(!learningMobileFullscreen||scrollLocked||scrollRestoring)return;
+    requestAnimationFrame(()=>{if(!scrollLocked&&!scrollRestoring)updateLearningScroll();});
+  },{passive:true});
   reduced.addEventListener('change',()=>{
     if(scrollLocked||scrollRestoring) {layoutRefreshPending=true;return;}
     refreshLayout();
