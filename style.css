@@ -788,6 +788,9 @@ dialog.project-dialog { width: min(1320px,calc(100% - 48px)); height: min(900px,
 /* 모바일에서도 데스크톱과 같은 고정·순차·터치 반응을 사용합니다. */
 .competency-pin.is-pinned .competency-stage-inner { max-height: 100%; overflow-y: auto; overscroll-behavior-y: auto; scrollbar-width: thin; }
 .experience-pin.is-pinned .experience-body { min-height: 0; overflow-y: auto; overscroll-behavior-y: auto; scrollbar-width: thin; }
+/* 경력 고정 구간에서만 세로 스와이프를 직접 처리합니다. 가로 제스처·핀치 확대는 유지합니다. */
+.experience-pin.is-pinned.is-step-controlled .experience-stage { touch-action: pan-x pinch-zoom; overscroll-behavior-y: contain; }
+.experience-pin.is-pinned.is-step-controlled .experience-body { overscroll-behavior-y: contain; }
 .experience-pin.is-pinned .is-experience-neighbor .experience-body { overflow: hidden; }
 .learning-gallery.is-pinned .learning-copy { min-height: 0; max-height: 100%; overflow-y: auto; scrollbar-width: thin; }
 .project-card.is-touch-active,.project-card:active { scale: 1.025; translate: 0 -4px; z-index: 3; border-color: var(--primary); }
@@ -801,9 +804,9 @@ button.credential-row.is-touch-active,button.credential-row:active { color: var(
 @media (hover: hover) and (pointer: fine) {
   .skill-card:hover { translate: 0 -4px; border-color: var(--primary-on-dark); }
 }
-/* 가로로 눕힌 휴대폰에서는 설명과 아이패드를 나란히 놓아 고정 무대에 맞춥니다. */
+/* 모바일은 화면 높이와 관계없이 글 위·아이패드 아래 순서를 유지합니다. */
 @media screen and (max-width: 899px) {
-  .motion-short-viewport .learning-gallery.is-pinned .learning-stage { grid-template-columns: minmax(0,.8fr) minmax(0,1.2fr); gap: 12px; align-items: center; }
+  .motion-short-viewport .learning-gallery.is-pinned .learning-stage { grid-template-columns: minmax(0,1fr); gap: 12px; align-content: center; }
   .motion-short-viewport .learning-gallery.is-pinned .learning-copy h3 { font-size: 18px; margin: 4px 0 8px; }
   .motion-short-viewport .learning-gallery.is-pinned .learning-title { font-size: 12px; line-height: 1.4; margin-bottom: 6px; }
   .motion-short-viewport .learning-gallery.is-pinned .learning-copy .muted { font-size: 11px; line-height: 1.45; }
